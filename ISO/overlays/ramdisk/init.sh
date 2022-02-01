@@ -36,8 +36,6 @@ mount -u -w /
 
 echo "==> Make mountpoints"
 mkdir -p /cdrom
-mkdir -p /sysroot
-mkdir -p /memdisk
 
 echo "Waiting for Live media to appear"
 while : ; do
@@ -54,42 +52,54 @@ mdconfig -u 1 -f /cdrom/data/system.uzip
 echo "==> Importing ZFS pool"
 zpool import furybsd -o readonly=on
 
-if [ "$SINGLE_USER" = "true" ]; then
-	echo -n "Enter memdisk size used for read-write access in the live system: "
-	read MEMDISK_SIZE
-else
-	MEMDISK_SIZE="2048"
-fi
-
-echo "==> Mount unionfs"
-mdmfs -s "${MEMDISK_SIZE}m" md /memdisk || exit 1
-mount -t unionfs -o noatime -o copymode=transparent /memdisk /sysroot
-
-echo "==> Mount /sysroot/sysroot/boot" # https://github.com/helloSystem/ISO/issues/4#issuecomment-800636914
-mkdir -p /sysroot/sysroot/boot
-mount -t nullfs /sysroot/boot /sysroot/sysroot/boot
-
-echo "==> Mounting tmpfs on /tmp"
-mount -t tmpfs tmpfs /sysroot/tmp
-
-echo "==> Change into /sysroot"
-mount -t devfs devfs /sysroot/dev
 echo "Setting up the live environment..." > /dev/tty
-chroot /sysroot /usr/bin/furybsd-init-helper
+
+echo "==> Mounting /tmp and /proc"
+mkdir /tmp /proc
+mount -t tmpfs tmpfs /tmp
+chmod 1777 /tmp
+mount -t procfs procfs /proc
+
+echo "==> Creating root symlinks"
+rmdir /bin /sbin /usr/libexec /usr
+mkdir /root /mnt /media /Volumes
+for d in bin sbin lib libexec boot usr Applications System Library; do
+	echo -n "$d "; ln -s /sysroot/$d /$d
+done
+
+echo "==> Populating etc and var"
+mkdir -p /etc /var
+mount -t tmpfs tmpfs /etc
+mount -t tmpfs tmpfs /var
+tar -C /sysroot/etc -cpf - . | tar -C /etc -xf -
+tar -C /sysroot/var -cpf - . | tar -C /var -xf -
+
+echo "==> User directory"
+mkdir -p /Users/liveuser
+mount -t tmpfs tmpfs /Users/liveuser
+tar -C /sysroot/Users/liveuser -cpf - . | tar -C /Users/liveuser -xf -
+
+echo "==> Loading important modules"
+for mod in ums utouch firewire; do
+	echo -n "$mod "; kldload $mod
+done
+
+/usr/bin/furybsd-init-helper
 
 if [ "$SINGLE_USER" = "true" ]; then
-        echo "Starting interactive shell after chroot ..."
+        echo "Starting interactive shell..."
         sh
 fi
 
-kenv init_path="/rescue/init"
+ps ax | tee /tmp/ps.txt
+
+kenv init_path="/sbin/launchd"
 kenv init_shell="/rescue/sh"
 kenv init_script="/init.sh"
-kenv init_chroot="/sysroot"
+kenv init_chroot="/"
 
-echo "==> Set kernel module path for chroot"
-sysctl kern.module_path=/sysroot/boot/kernel
-        
+exec /sbin/launchd
+
 echo "==> Exit ramdisk init.sh"
 exit 0
 

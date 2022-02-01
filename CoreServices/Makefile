@@ -1,5 +1,5 @@
 THISDIR:= ${.CURDIR}
-EXTRA_CXXFLAGS= -F${BUILDROOT}/System/Library/Frameworks -I/usr/include/gio-unix-2.0
+EXTRA_CXXFLAGS= -I/usr/include/gio-unix-2.0
 
 all: clean build
 clean:
@@ -15,9 +15,14 @@ DMIHelper: DMIHelper.c
 	${SUDO} chmod 4755 ${BUILDROOT}/System/Library/CoreServices/DMIHelper
 
 build: buildFiler DMIHelper buildInstaller
+	mkdir -p ${BUILDROOT}/System/Library/CoreServices/
 	mkdir -p ${BUILDROOT}/Applications/Utilities/
 	cp -av Filer/Filer.app ${BUILDROOT}/System/Library/CoreServices
 	cp -av Installer/"Install airyxOS.app" ${BUILDROOT}/Applications/Utilities/
+.for f in askpass enable_tapping tpquirk startDesktop
+		cp -fv ${f} ${BUILDROOT}/System/Library/CoreServices/
+		chmod 755 ${BUILDROOT}/System/Library/CoreServices/${f}
+.endfor
 
 buildInstaller:
 	${MAKE} -C Installer build
